@@ -8,27 +8,29 @@
 #   onward. The hosted x64 zip is frozen at 0.10.1. So Intel Macs must build from source.
 #
 # USAGE:
-#   bash build-craft-intel.sh <tag>        e.g. bash build-craft-intel.sh v0.10.4
-#   bash build-craft-intel.sh v0.10.4 --no-install   # build only, don't touch /Applications
+#   bash scripts/build-intel-mac.sh <tag>        e.g. bash scripts/build-intel-mac.sh v0.11.1-intel.1
+#   bash scripts/build-intel-mac.sh v0.11.1-intel.1 --no-install   # build only, don't touch /Applications
+#
+#   Override clone source if needed:
+#   CRAFT_AGENTS_REPO=https://github.com/craft-ai-agents/craft-agents-oss.git bash scripts/build-intel-mac.sh v0.11.1 --no-install
 #
 # REQUIREMENTS: bun, node, git, curl, unzip (all standard on a dev Mac).
 # RESULT: /Applications/Craft Agents.app at the requested version (x86_64), old one backed up.
 #
 set -euo pipefail
 
-TAG="${1:?Usage: build-craft-intel.sh <tag> [--no-install]}"
+TAG="${1:?Usage: scripts/build-intel-mac.sh <tag> [--no-install]}"
 DO_INSTALL=true
 [ "${2:-}" = "--no-install" ] && DO_INSTALL=false
 
-REPO="https://github.com/craft-ai-agents/craft-agents-oss.git"
+REPO="${CRAFT_AGENTS_REPO:-https://github.com/advanceit2004/craft-agents-oss.git}"
 SRC="$HOME/.craft-agent/src/craft-agents-oss"
 ARCH="x64"            # Intel
-BUN_VERSION="bun-v1.3.9"   # keep in sync with apps/electron/scripts/build-dmg.sh
 
 say() { printf "\n\033[1;34m=== %s ===\033[0m\n" "$1"; }
 
 # 1. Clone (or refresh) the requested tag --------------------------------------
-say "Clone $TAG"
+say "Clone $TAG from $REPO"
 rm -rf "$SRC"
 git clone --depth 1 --branch "$TAG" "$REPO" "$SRC"
 cd "$SRC"
@@ -61,7 +63,9 @@ chmod +x "$EL/resources/bin/darwin-x64/uv"
 rm -rf "$T"
 
 # 6. Stage Bun vendor runtime --------------------------------------------------
-say "Stage Bun vendor ($BUN_VERSION, darwin-x64)"
+say "Stage Bun vendor for darwin-x64"
+BUN_VERSION="$(grep -E "export const BUN_VERSION" scripts/build/common.ts | sed -E "s/.*'([^']+)'.*/\1/")"
+echo "Using Bun ${BUN_VERSION}"
 mkdir -p "$EL/vendor/bun"
 T="$(mktemp -d)"
 curl -fSL "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/bun-darwin-x64.zip" -o "$T/bun.zip"
@@ -97,6 +101,14 @@ cd "$EL"
 CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --x64 --config electron-builder.yml
 APP="$EL/release/mac/Craft Agents.app"
 codesign --force --deep --sign - "$APP"
+
+# electron-builder may emit a multi-arch latest-mac.yml even for an Intel-focused
+# build. Keep the update manifest self-contained for releases that upload x64
+# assets only.
+if [ -f "$EL/release/latest-mac.yml" ]; then
+  perl -0pi -e 's/\n  - url: Craft-Agents-arm64\.zip\n    sha512: [^\n]+\n    size: \d+//g; s/\n  - url: Craft-Agents-arm64\.dmg\n    sha512: [^\n]+\n    size: \d+//g' "$EL/release/latest-mac.yml"
+fi
+
 echo "Built: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist") / $(lipo -archs "$APP/Contents/MacOS/Craft Agents")"
 
 # 10. Install ------------------------------------------------------------------

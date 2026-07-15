@@ -4,13 +4,13 @@ From **v0.10.4 onward, Craft Agents ships macOS as Apple Silicon (arm64) only** 
 official GitHub releases and the hosted update channel (`agents.craft.do/electron`). The last
 hosted Intel build is frozen at `0.10.1`. **Intel Mac users must therefore build from source.**
 
-This repo includes a script that automates the entire build + install:
-[`scripts/build-intel-mac.sh`](../scripts/build-intel-mac.sh).
+This fork includes a script that automates the entire build + install:
+[`scripts/build-intel-mac.sh`](../scripts/build-intel-mac.sh). By default it clones this fork (`advanceit2004/craft-agents-oss`). To build directly from upstream instead, set `CRAFT_AGENTS_REPO=https://github.com/craft-ai-agents/craft-agents-oss.git`.
 
 ## Quick start
 
 ```bash
-bash scripts/build-intel-mac.sh v0.10.4
+bash scripts/build-intel-mac.sh v0.11.1-intel.1
 ```
 
 That clones the tag, installs dependencies, stages all build artifacts, packages an Intel
@@ -20,8 +20,8 @@ installs the new one. Then **quit Craft Agents (Cmd+Q) and reopen** to switch ve
 Build without installing:
 
 ```bash
-bash scripts/build-intel-mac.sh v0.10.4 --no-install
-# artifacts land in apps/electron/release/
+bash scripts/build-intel-mac.sh v0.11.1-intel.1 --no-install
+# artifacts land in ~/.craft-agent/src/craft-agents-oss/apps/electron/release/
 ```
 
 ## Requirements
@@ -41,7 +41,7 @@ clean build must produce and place them manually:
 | pi-agent-server | `apps/electron/resources/pi-agent-server/index.js` | `bun run server:build:subprocess` |
 | WhatsApp worker | `packages/messaging-whatsapp-worker/dist/worker.cjs` | `bun run build:wa-worker` (**mandatory** — electron-builder errors without it) |
 | uv (Python runtime) | `apps/electron/resources/bin/darwin-x64/uv` | downloaded (version pinned in `scripts/build/common.ts`) |
-| Bun vendor runtime | `apps/electron/vendor/bun/bun` | downloaded (`bun-v1.3.9`) |
+| Bun vendor runtime | `apps/electron/vendor/bun/bun` | downloaded (version pinned in `scripts/build/common.ts`) |
 | Claude Agent SDK native binary | `apps/electron/node_modules/@anthropic-ai/claude-agent-sdk-binary/claude` | copied from `claude-agent-sdk-darwin-x64` |
 
 It then runs `bun run electron:build` and packages with
@@ -58,6 +58,15 @@ It then runs `bun run electron:build` and packages with
   `apps/electron/electron-builder.yml`'s `publish.url` at your fork's releases.
 - **Keep the Mac awake** during the build: prefix with `caffeinate -dimsu`.
 - Electron runtime is cached after the first build, so later versions skip the ~112 MB download.
+
+## Build upstream tag directly
+
+To build an exact upstream tag instead of this fork's Intel release tag:
+
+```bash
+CRAFT_AGENTS_REPO=https://github.com/craft-ai-agents/craft-agents-oss.git \
+  bash scripts/build-intel-mac.sh v0.11.1 --no-install
+```
 
 ## Prebuilt Intel releases
 
