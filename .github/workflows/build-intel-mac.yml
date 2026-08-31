@@ -1,0 +1,86 @@
+name: Build Intel Mac
+
+# Builds a native x86_64 (Intel) macOS app on a GitHub-hosted Intel runner and
+# publishes the .dmg/.zip to the fork's Release for the given tag. No local Mac
+# and no Apple signing cert required (ad-hoc signed inside the build script).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Fork tag to build (must already exist, e.g. v0.12.1-intel.1)"
+        required: true
+        default: "v0.12.1-intel.1"
+  push:
+    tags:
+      - "v*-intel.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-intel-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-13 # Intel (x86_64) runner
+    timeout-minutes: 90
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout (for build script)
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Confirm Intel runner + target tag
+        run: |
+          echo "Runner arch: $(uname -m)   (expect x86_64)"
+          echo "Building tag: $TAG"
+
+      - name: Build Intel app (no install)
+        run: bash scripts/build-intel-mac.sh "$TAG" --no-install
+
+      - name: Locate artifacts
+        id: art
+        run: |
+          REL="$HOME/.craft-agent/src/craft-agents-oss/apps/electron/release"
+          echo "dir=$REL" >> "$GITHUB_OUTPUT"
+          echo "Artifacts:"; ls -la "$REL"
+
+      - name: Upload build artifacts (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: craft-agents-intel-${{ env.TAG }}
+          if-no-files-found: error
+          path: |
+            ${{ steps.art.outputs.dir }}/*.dmg
+            ${{ steps.art.outputs.dir }}/*.zip
+            ${{ steps.art.outputs.dir }}/latest-mac.yml
+
+      - name: Publish to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REL="${{ steps.art.outputs.dir }}"
+          UPSTREAM_VER="$(echo "$TAG" | sed -E 's/-intel\..*//')"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG exists — uploading assets (clobber)."
+            gh release upload "$TAG" "$REL"/*.dmg "$REL"/*.zip "$REL"/latest-mac.yml \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            echo "Creating release $TAG."
+            gh release create "$TAG" "$REL"/*.dmg "$REL"/*.zip "$REL"/latest-mac.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Craft Agents $TAG (Intel x64)" \
+              --notes "Unofficial Intel (x86_64) build of upstream ${UPSTREAM_VER}. Ad-hoc signed (not Apple-notarized): on first launch right-click the app -> Open, or run \`xattr -c \"/Applications/Craft Agents.app\"\`."
+          fi
